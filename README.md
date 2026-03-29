@@ -10,6 +10,11 @@ In this system, only deposit transactions can be disputed.
 This is because the dispute is considered to be only in the client that got the money (Deposit)
 and not in the client that sent the money (Withdrawal)
 
+### Type-state pattern
+
+The system uses the type-state pattern to ensure that only valid operations can be performed on transactions based on their current state.
+For example, a transaction that is in the "chargeback" state cannot be disputed again.
+
 ### Rounding Strategy
 
 Monetary values are rounded to **4 decimal places** using `RoundingStrategy::MidpointNearestEven` (banker's rounding).
