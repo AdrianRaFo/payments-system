@@ -1,4 +1,5 @@
 use payments_system::csv::{TransactionRecord, TransactionType};
+use payments_system::generate_accounts_report;
 use payments_system::models::{ClientId, ClientPayment, MoneyAmount, TransactionId};
 use payments_system::process_csv_record;
 use rust_decimal::dec;
@@ -121,4 +122,124 @@ fn chargeback_does_not_lock_client_when_payment_state_does_not_change() {
         payment_db.get(&(ClientId(3), TransactionId(9))),
         Some(ClientPayment::Done(_))
     ));
+}
+
+#[test]
+fn dispute_resolve_chargeback_on_missing_tx_are_ignored() {
+    let (locked_clients, payment_db) = apply_records(vec![
+        record(TransactionType::Dispute, 1, 99, None),
+        record(TransactionType::Resolve, 1, 99, None),
+        record(TransactionType::Chargeback, 1, 99, None),
+    ]);
+
+    assert!(locked_clients.is_empty());
+    assert!(payment_db.is_empty());
+}
+
+#[test]
+fn dispute_on_withdrawal_is_ignored() {
+    let (locked_clients, payment_db) = apply_records(vec![
+        record(
+            TransactionType::Withdrawal,
+            1,
+            10,
+            Some(MoneyAmount(dec!(25.0))),
+        ),
+        record(TransactionType::Dispute, 1, 10, None),
+    ]);
+
+    assert!(locked_clients.is_empty());
+    assert!(matches!(
+        payment_db.get(&(ClientId(1), TransactionId(10))),
+        Some(ClientPayment::Done(_))
+    ));
+}
+
+#[test]
+fn resolve_and_chargeback_on_done_state_are_ignored() {
+    let (locked_clients, payment_db) = apply_records(vec![
+        record(
+            TransactionType::Deposit,
+            2,
+            20,
+            Some(MoneyAmount(dec!(40.0))),
+        ),
+        record(TransactionType::Resolve, 2, 20, None),
+        record(TransactionType::Chargeback, 2, 20, None),
+    ]);
+
+    assert!(locked_clients.is_empty());
+    assert!(matches!(
+        payment_db.get(&(ClientId(2), TransactionId(20))),
+        Some(ClientPayment::Done(_))
+    ));
+}
+
+#[test]
+fn resolve_and_chargeback_on_resolved_state_are_ignored() {
+    let (locked_clients, payment_db) = apply_records(vec![
+        record(
+            TransactionType::Deposit,
+            3,
+            30,
+            Some(MoneyAmount(dec!(70.0))),
+        ),
+        record(TransactionType::Dispute, 3, 30, None),
+        record(TransactionType::Resolve, 3, 30, None),
+        record(TransactionType::Resolve, 3, 30, None),
+        record(TransactionType::Chargeback, 3, 30, None),
+    ]);
+
+    assert!(locked_clients.is_empty());
+    assert!(matches!(
+        payment_db.get(&(ClientId(3), TransactionId(30))),
+        Some(ClientPayment::Resolved(_))
+    ));
+}
+
+#[test]
+fn resolve_on_chargedback_is_ignored_after_lock() {
+    let (locked_clients, payment_db) = apply_records(vec![
+        record(
+            TransactionType::Deposit,
+            4,
+            40,
+            Some(MoneyAmount(dec!(60.0))),
+        ),
+        record(TransactionType::Dispute, 4, 40, None),
+        record(TransactionType::Chargeback, 4, 40, None),
+        record(TransactionType::Resolve, 4, 40, None),
+    ]);
+
+    assert!(locked_clients.contains(&ClientId(4)));
+    assert!(matches!(
+        payment_db.get(&(ClientId(4), TransactionId(40))),
+        Some(ClientPayment::ChargedBack(_))
+    ));
+}
+
+#[test]
+fn duplicate_tx_id_keeps_first_record_with_or_insert() {
+    let (_, payment_db) = apply_records(vec![
+        record(
+            TransactionType::Deposit,
+            5,
+            50,
+            Some(MoneyAmount(dec!(10.0))),
+        ),
+        record(
+            TransactionType::Deposit,
+            5,
+            50,
+            Some(MoneyAmount(dec!(99.0))),
+        ),
+    ]);
+
+    let report = generate_accounts_report(payment_db);
+    let status = report.get(&ClientId(5)).unwrap();
+
+    assert_eq!(status.available, MoneyAmount(dec!(10.0)));
+    assert_eq!(status.total, MoneyAmount(dec!(10.0)));
+    assert_eq!(status.held, MoneyAmount(dec!(0.0)));
+    assert!(!status.locked);
 }

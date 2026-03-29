@@ -88,11 +88,11 @@ pub enum PaymentType {
 
 #[derive(Debug, Serialize)]
 pub struct Payment<S: PaymentState> {
-    pub(crate) client_id: ClientId,
-    pub(crate) tx_id: TransactionId,
-    pub(crate) payment_type: PaymentType,
-    pub(crate) amount: MoneyAmount,
-    pub(crate) _state: S,
+    pub client_id: ClientId,
+    pub tx_id: TransactionId,
+    pub payment_type: PaymentType,
+    pub amount: MoneyAmount,
+    pub _state: S,
 }
 
 // Only payments that has not been disputed before can be disputed

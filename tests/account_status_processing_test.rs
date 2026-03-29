@@ -1,48 +1,40 @@
-use payments_system::csv::{TransactionRecord, TransactionType};
 use payments_system::generate_accounts_report;
-use payments_system::models::{ClientId, ClientPayment, MoneyAmount, TransactionId};
-use payments_system::process_csv_record;
+use payments_system::models::{
+    ChargedBack, ClientId, ClientPayment, Done, MoneyAmount, OnDispute, Payment, PaymentState,
+    PaymentType, Resolved, TransactionId,
+};
 use rust_decimal::dec;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-fn record(
-    kind: TransactionType,
-    client_id: u16,
-    tx_id: u32,
-    amount: Option<MoneyAmount>,
-) -> TransactionRecord {
-    TransactionRecord {
-        transaction_type: kind,
+fn payment<S: PaymentState>(
+    client_id: ClientId,
+    tx_id: TransactionId,
+    payment_type: PaymentType,
+    amount: MoneyAmount,
+    state: S,
+) -> Payment<S> {
+    Payment {
         client_id,
         tx_id,
+        payment_type,
         amount,
+        _state: state,
     }
-}
-
-fn apply_records(
-    records: Vec<TransactionRecord>,
-) -> (
-    HashSet<ClientId>,
-    HashMap<(ClientId, TransactionId), ClientPayment>,
-) {
-    let mut locked_clients: HashSet<ClientId> = HashSet::new();
-    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
-
-    for tx in records {
-        process_csv_record(&mut locked_clients, &mut payment_db, tx).unwrap();
-    }
-
-    (locked_clients, payment_db)
 }
 
 #[test]
 fn generate_report_single_deposit() {
-    let (_, payment_db) = apply_records(vec![record(
-        TransactionType::Deposit,
-        1,
-        1,
-        Some(MoneyAmount(dec!(100.0))),
-    )]);
+    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
+    payment_db.insert(
+        (ClientId(1), TransactionId(1)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(1),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(100.0)),
+            Done,
+        )),
+    );
 
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
@@ -55,12 +47,17 @@ fn generate_report_single_deposit() {
 
 #[test]
 fn generate_report_single_withdrawal() {
-    let (_, payment_db) = apply_records(vec![record(
-        TransactionType::Withdrawal,
-        1,
-        1,
-        Some(MoneyAmount(dec!(50.0))),
-    )]);
+    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
+    payment_db.insert(
+        (ClientId(1), TransactionId(1)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(1),
+            PaymentType::Withdrawal,
+            MoneyAmount(dec!(50.0)),
+            Done,
+        )),
+    );
 
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
@@ -73,20 +70,27 @@ fn generate_report_single_withdrawal() {
 
 #[test]
 fn generate_report_deposit_and_withdrawal() {
-    let (_, payment_db) = apply_records(vec![
-        record(
-            TransactionType::Deposit,
-            1,
-            1,
-            Some(MoneyAmount(dec!(100.0))),
-        ),
-        record(
-            TransactionType::Withdrawal,
-            1,
-            2,
-            Some(MoneyAmount(dec!(30.0))),
-        ),
-    ]);
+    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
+    payment_db.insert(
+        (ClientId(1), TransactionId(1)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(1),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(100.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(2)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(2),
+            PaymentType::Withdrawal,
+            MoneyAmount(dec!(30.0)),
+            Done,
+        )),
+    );
 
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
@@ -99,29 +103,37 @@ fn generate_report_deposit_and_withdrawal() {
 
 #[test]
 fn generate_report_deposit_dispute_and_resolve() {
-    let (_, payment_db) = apply_records(vec![
-        record(
-            TransactionType::Deposit,
-            1,
-            1,
-            Some(MoneyAmount(dec!(100.0))),
-        ),
-        record(
-            TransactionType::Deposit,
-            1,
-            2,
-            Some(MoneyAmount(dec!(50.0))),
-        ),
-        record(TransactionType::Dispute, 1, 2, None),
-        record(
-            TransactionType::Deposit,
-            1,
-            3,
-            Some(MoneyAmount(dec!(25.0))),
-        ),
-        record(TransactionType::Dispute, 1, 3, None),
-        record(TransactionType::Resolve, 1, 3, None),
-    ]);
+    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
+    payment_db.insert(
+        (ClientId(1), TransactionId(1)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(1),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(100.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(2)),
+        ClientPayment::OnDispute(payment(
+            ClientId(1),
+            TransactionId(2),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(50.0)),
+            OnDispute,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(3)),
+        ClientPayment::Resolved(payment(
+            ClientId(1),
+            TransactionId(3),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(25.0)),
+            Resolved,
+        )),
+    );
 
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
@@ -134,22 +146,27 @@ fn generate_report_deposit_dispute_and_resolve() {
 
 #[test]
 fn generate_report_deposit_then_chargeback() {
-    let (_, payment_db) = apply_records(vec![
-        record(
-            TransactionType::Deposit,
-            1,
-            1,
-            Some(MoneyAmount(dec!(100.0))),
-        ),
-        record(
-            TransactionType::Deposit,
-            1,
-            2,
-            Some(MoneyAmount(dec!(50.0))),
-        ),
-        record(TransactionType::Dispute, 1, 2, None),
-        record(TransactionType::Chargeback, 1, 2, None),
-    ]);
+    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
+    payment_db.insert(
+        (ClientId(1), TransactionId(1)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(1),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(100.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(2)),
+        ClientPayment::ChargedBack(payment(
+            ClientId(1),
+            TransactionId(2),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(50.0)),
+            ChargedBack,
+        )),
+    );
 
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
@@ -162,42 +179,59 @@ fn generate_report_deposit_then_chargeback() {
 
 #[test]
 fn generate_report_complex_scenario() {
-    let (_, payment_db) = apply_records(vec![
-        record(
-            TransactionType::Deposit,
-            1,
-            1,
-            Some(MoneyAmount(dec!(100.0))),
-        ),
-        record(
-            TransactionType::Withdrawal,
-            1,
-            2,
-            Some(MoneyAmount(dec!(30.0))),
-        ),
-        record(
-            TransactionType::Deposit,
-            1,
-            3,
-            Some(MoneyAmount(dec!(40.0))),
-        ),
-        record(TransactionType::Dispute, 1, 3, None),
-        record(TransactionType::Resolve, 1, 3, None),
-        record(
-            TransactionType::Deposit,
-            2,
-            4,
-            Some(MoneyAmount(dec!(250.0))),
-        ),
-        record(
-            TransactionType::Deposit,
-            2,
-            5,
-            Some(MoneyAmount(dec!(50.0))),
-        ),
-        record(TransactionType::Dispute, 2, 5, None),
-        record(TransactionType::Chargeback, 2, 5, None),
-    ]);
+    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
+
+    payment_db.insert(
+        (ClientId(1), TransactionId(1)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(1),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(100.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(2)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(2),
+            PaymentType::Withdrawal,
+            MoneyAmount(dec!(30.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(3)),
+        ClientPayment::Resolved(payment(
+            ClientId(1),
+            TransactionId(3),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(40.0)),
+            Resolved,
+        )),
+    );
+
+    payment_db.insert(
+        (ClientId(2), TransactionId(4)),
+        ClientPayment::Done(payment(
+            ClientId(2),
+            TransactionId(4),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(250.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(2), TransactionId(5)),
+        ClientPayment::ChargedBack(payment(
+            ClientId(2),
+            TransactionId(5),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(50.0)),
+            ChargedBack,
+        )),
+    );
 
     let report = generate_accounts_report(payment_db);
 
@@ -216,35 +250,48 @@ fn generate_report_complex_scenario() {
 
 #[test]
 fn complex_workflow_with_withdrawal_deposit_dispute_chargeback() {
-    let (_, payment_db) = apply_records(vec![
-        record(
-            TransactionType::Deposit,
-            1,
-            1,
-            Some(MoneyAmount(dec!(500.0))),
-        ),
-        record(
-            TransactionType::Withdrawal,
-            1,
-            2,
-            Some(MoneyAmount(dec!(200.0))),
-        ),
-        record(
-            TransactionType::Deposit,
-            1,
-            3,
-            Some(MoneyAmount(dec!(300.0))),
-        ),
-        record(TransactionType::Dispute, 1, 3, None),
-        record(
-            TransactionType::Deposit,
-            1,
-            4,
-            Some(MoneyAmount(dec!(150.0))),
-        ),
-        record(TransactionType::Dispute, 1, 4, None),
-        record(TransactionType::Chargeback, 1, 4, None),
-    ]);
+    let mut payment_db: HashMap<(ClientId, TransactionId), ClientPayment> = HashMap::new();
+
+    payment_db.insert(
+        (ClientId(1), TransactionId(1)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(1),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(500.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(2)),
+        ClientPayment::Done(payment(
+            ClientId(1),
+            TransactionId(2),
+            PaymentType::Withdrawal,
+            MoneyAmount(dec!(200.0)),
+            Done,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(3)),
+        ClientPayment::OnDispute(payment(
+            ClientId(1),
+            TransactionId(3),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(300.0)),
+            OnDispute,
+        )),
+    );
+    payment_db.insert(
+        (ClientId(1), TransactionId(4)),
+        ClientPayment::ChargedBack(payment(
+            ClientId(1),
+            TransactionId(4),
+            PaymentType::Deposit,
+            MoneyAmount(dec!(150.0)),
+            ChargedBack,
+        )),
+    );
 
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
