@@ -146,7 +146,7 @@ pub enum ClientPayment {
 }
 
 impl ClientPayment {
-    pub(crate) fn state(&self) -> String {
+    pub fn state(&self) -> String {
         match self {
             ClientPayment::Done(_) => "Done".to_string(),
             ClientPayment::OnDispute(_) => "OnDispute".to_string(),

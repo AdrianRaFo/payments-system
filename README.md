@@ -19,7 +19,7 @@ For example, a transaction that is in the "chargeback" state cannot be disputed 
 
 Monetary values are rounded to **4 decimal places** using `RoundingStrategy::MidpointNearestEven` (banker's rounding).
 
-This policy is implemented in `MoneyAmount::new` (`src/models.rs`) and is used to reduce cumulative rounding bias across many transactions.
+This policy is implemented in `MoneyAmount` (`src/models.rs`) deserializer and is used to reduce cumulative rounding bias across many transactions.
 
 ### Deserialization error handling
 
