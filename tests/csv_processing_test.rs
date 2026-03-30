@@ -101,7 +101,7 @@ fn chargeback_locks_client_and_ignores_future_transactions() {
         payment_db.get(&(ClientId(2), TransactionId(7))),
         Some(ClientPayment::ChargedBack(_))
     ));
-    assert!(payment_db.get(&(ClientId(2), TransactionId(8))).is_none());
+    assert!(!payment_db.contains_key(&(ClientId(2), TransactionId(8))));
 }
 
 #[test]
