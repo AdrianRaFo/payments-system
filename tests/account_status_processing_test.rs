@@ -171,9 +171,9 @@ fn generate_report_deposit_then_chargeback() {
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
 
-    assert_eq!(status.available, MoneyAmount(dec!(50.0)));
+    assert_eq!(status.available, MoneyAmount(dec!(100.0)));
     assert_eq!(status.held, MoneyAmount(dec!(0.0)));
-    assert_eq!(status.total, MoneyAmount(dec!(50.0)));
+    assert_eq!(status.total, MoneyAmount(dec!(100.0)));
     assert!(status.locked);
 }
 
@@ -242,9 +242,9 @@ fn generate_report_complex_scenario() {
     assert!(!status1.locked);
 
     let status2 = report.get(&ClientId(2)).unwrap();
-    assert_eq!(status2.available, MoneyAmount(dec!(200.0)));
+    assert_eq!(status2.available, MoneyAmount(dec!(250.0)));
     assert_eq!(status2.held, MoneyAmount(dec!(0.0)));
-    assert_eq!(status2.total, MoneyAmount(dec!(200.0)));
+    assert_eq!(status2.total, MoneyAmount(dec!(250.0)));
     assert!(status2.locked);
 }
 
@@ -296,9 +296,9 @@ fn complex_workflow_with_withdrawal_deposit_dispute_chargeback() {
     let report = generate_accounts_report(payment_db);
     let status = report.get(&ClientId(1)).unwrap();
 
-    assert_eq!(status.available, MoneyAmount(dec!(150.0)));
+    assert_eq!(status.available, MoneyAmount(dec!(300.0)));
     assert_eq!(status.held, MoneyAmount(dec!(300.0)));
-    assert_eq!(status.total, MoneyAmount(dec!(450.0)));
+    assert_eq!(status.total, MoneyAmount(dec!(600.0)));
     assert!(status.locked);
     assert_eq!(status.available + status.held, status.total);
 }

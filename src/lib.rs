@@ -106,24 +106,30 @@ pub fn generate_accounts_report(
         match payment {
             ClientPayment::Done(payment) => {
                 if payment.payment_type == PaymentType::Deposit {
+                    // Deposit payment on client's account, available and total amounts increases
                     client_status.available += payment.amount;
                     client_status.total += payment.amount;
                 } else {
+                    // Withdrawal payment on client's account, available and total amounts decreases
                     client_status.available -= payment.amount;
                     client_status.total -= payment.amount;
                 }
             }
+            // A deposit payment is present but under an open dispute,
+            // the total amount increases but money is held instead of available
             ClientPayment::OnDispute(payment) => {
                 client_status.held += payment.amount;
                 client_status.total += payment.amount;
             }
+            // The payment went through a dispute and was successfully resolved,
+            // the available and total amounts increases like a regular Deposit
             ClientPayment::Resolved(payment) => {
                 client_status.available += payment.amount;
                 client_status.total += payment.amount;
             }
-            ClientPayment::ChargedBack(payment) => {
-                client_status.available -= payment.amount;
-                client_status.total -= payment.amount;
+            // The original deposit went through a dispute and was charged back,
+            // the amounts remain the same but the client's account is locked
+            ClientPayment::ChargedBack(_) => {
                 client_status.locked = true;
             }
         }
